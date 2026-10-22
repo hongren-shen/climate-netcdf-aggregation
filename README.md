@@ -26,7 +26,7 @@ Utilities and scripts for aggregating gridded NetCDF meteorological forcing data
 
 ## Requirements
 
-This repo is written in Python 3.9+ (recommended: 3.10/3.11).
+This repo is written in Python 3.11 (recommended: 3.11/3.12/3.13).
 
 Typical dependencies:
 - `numpy`

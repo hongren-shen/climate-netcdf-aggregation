@@ -4,12 +4,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 """
-Utilities used across the aggregation workflow.
+Shared functions for the aggregation workflow.
 
-This file includes:
-- Small, stable utilities (timing, zipping, naming, metadata dumping)
-- Workflow helpers (temporal wrappers, metadata naming, cleanup)
-- A wrapper for external gridweights generator (create_cropping_info)
+These functions name output files, write metadata, run temporal aggregation,
+create ZIP files, and remove intermediate files. The create_cropping_info
+function runs the grid-weight generator.
 
 """
 
@@ -483,7 +482,7 @@ def create_cropping_info(
     generate_json: bool = True,
 ) -> None:
     """
-    Calls your external gridweights generator script to produce a Raven gridweights file.
+    Run the grid-weight helper to create a Raven grid-weight file.
     """
     shapefile_path = str(shapefile_path)
     nc_path = str(nc_path)
@@ -610,6 +609,30 @@ def replicate_subbasin_coverage_to_hrus(
         out.write(":EndGridWeights\n")
 
 # Workflow helpers
+def normalize_hru_version(
+    hru_version: str,
+    *,
+    olrrp_version: Optional[str] = None,
+) -> tuple[str, str]:
+    """Resolve OWL-Hydro HRU version codes or legacy layout aliases."""
+    key = hru_version.strip().lower().replace("_", "-")
+    version_match = re.fullmatch(r"(v\d+-\d+-\d+)([ab])", key)
+    if version_match:
+        base_version, suffix = version_match.groups()
+        if olrrp_version is not None:
+            expected = olrrp_version.strip().lower().replace("_", "-")
+            if base_version != expected:
+                raise ValueError(
+                    f"HRU version {hru_version!r} does not match olrrp_version={olrrp_version!r}."
+                )
+        key = suffix
+    if key in {"a", "semi", "semi-distributed", "semidistributed"}:
+        return "a", "Semi-distributed"
+    if key in {"b", "routing", "routing-only", "routingonly"}:
+        return "b", "Routing-only"
+    raise ValueError(f"Unknown hru_version: {hru_version}")
+
+
 def is_daily_freq(freq: str) -> bool:
     s = (freq or "").upper()
     return s in ("D", "1D", "24H")
@@ -619,7 +642,7 @@ def is_temperature_var(var_file_key: str | None) -> bool:
     return any(tok in s for tok in ("TT", "T2M", "TEMP"))
 
 def infer_hru_suffix(hru_version: str) -> str:
-    return "a" if str(hru_version).strip().lower().startswith("semi") else "b"
+    return normalize_hru_version(hru_version)[0]
 
 def infer_hru_suffix_from_agg_file(nc_path: Path) -> str:
     """

@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the archived version used in your work."
+type: software
+title: "Climate NetCDF aggregation tools"
+version: 1.0.0
+authors:
+  - family-names: Shen
+    given-names: Hongren
+    affiliation: University of Waterloo
+repository-code: "https://github.com/hongren-shen/climate-netcdf-aggregation"
+url: "https://github.com/hongren-shen/climate-netcdf-aggregation"
+license: LGPL-3.0-or-later
+abstract: >-
+  Python tools for area-weighted aggregation of prepared gridded NetCDF
+  meteorological forcing to gauge basins, subbasins, and hydrologic response
+  units. The tools write aggregated NetCDF files, Raven grid weights, and text
+  metadata files. Optional steps include temporal aggregation, daily temperature
+  statistics, and ZIP creation. The example uses CaSR v3.1 forcing and OWL-Hydro
+  routing products for gauge 02KA015 in southeastern Ontario, with the SE 24H
+  gauge inventory. The forcing covers 2020 and includes a buffer of five grid
+  cells around the gauge basin.
+keywords:
+  - hydrology
+  - meteorological forcing
+  - NetCDF
+  - spatial aggregation
+  - temporal aggregation
+  - CaSR
+  - OWL-Hydro
+  - Raven
+references:
+  - type: software
+    title: "Grid Weights Generator for Raven"
+    authors:
+      - family-names: Mai
+        given-names: Juliane
+    repository-code: "https://github.com/julemai/GridWeightsGenerator"
+    url: "https://github.com/julemai/GridWeightsGenerator"

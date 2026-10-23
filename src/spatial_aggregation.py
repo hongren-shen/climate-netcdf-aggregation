@@ -50,6 +50,7 @@ from forcing_utils import (
     create_cropping_info,
     export_nc_metadata_to_ascii,
     replicate_subbasin_coverage_to_hrus,
+    normalize_hru_version,
 )
 
 TIME_NAME = "time"
@@ -59,6 +60,33 @@ DIM_STRING30  = "string30"
 LEN_CHAR_ID   = 64
 LEN_STRING30  = 30
 DEFAULT_NUMERIC_FILL = -9999.0
+_CITATION_PATH = Path(__file__).resolve().parents[1] / "CITATION.cff"
+
+
+def _software_creator() -> str:
+    """Read the release version at write time; copied scripts can omit the CFF."""
+    name = "climate-netcdf-aggregation"
+    try:
+        citation = _CITATION_PATH.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError):
+        return name
+
+    # Read only the top-level scalar, without requiring a YAML dependency.
+    lines = [line for line in citation.splitlines() if line.startswith("version:")]
+    if len(lines) != 1:
+        return name
+    match = re.fullmatch(
+        r'''version:[ \t]*(?P<quote>["']?)'''
+        r'''(?P<version>[vV]?[0-9][0-9A-Za-z._+-]*)(?P=quote)'''
+        r'''(?:[ \t]+#.*)?[ \t]*''',
+        lines[0],
+    )
+    if match is None:
+        return name
+    version = match.group("version")
+    label = version if version.startswith(("v", "V")) else f"v{version}"
+    return f"{name} {label}"
+
 
 def _sanitize_fill_value(
     val,
@@ -114,15 +142,6 @@ __all__ = [
 ]
 
 
-def normalize_hru_version(hru_version: str) -> Tuple[str, str]:
-    key = hru_version.strip().lower().replace("_", "-")
-    if key in {"a", "semi", "semi-distributed", "semidistributed"}:
-        return "a", "Semi-distributed"
-    if key in {"b", "routing", "routing-only", "routingonly"}:
-        return "b", "Routing-only"
-    raise ValueError(f"Unknown hru_version: {hru_version}")
-
-
 def _lazy_key_cols() -> Dict[str, str]:
     try:
         return {
@@ -136,6 +155,31 @@ def _lazy_key_cols() -> Dict[str, str]:
 
 def _hdr_kv(key: str, val, width: int = 17) -> str:
     return f"# {key:>{width}}: {'' if val is None else str(val)}"
+
+
+def _gridweights_header(nc_path: Path, created_on: str) -> List[str]:
+    """Describe the referenced NetCDF using its own dataset metadata."""
+    dataset_label = ""
+    with nc.Dataset(nc_path, "r") as dataset:
+        for attribute in ("title", "source"):
+            value = getattr(dataset, attribute, None)
+            if isinstance(value, str) and value.strip():
+                dataset_label = " ".join(value.split())
+                break
+
+    lines = [
+        "# ---------------------------------------------------------------------------------------",
+        "#         File type: Grid Weights for Raven NETCDF v4.n",
+    ]
+    if dataset_label:
+        lines.append(_hdr_kv("Forcing dataset", dataset_label))
+    lines.extend([
+        _hdr_kv("Created by", _software_creator()),
+        "#        Repository: https://github.com/hongren-shen/climate-netcdf-aggregation",
+        _hdr_kv("Creation date", created_on),
+        "# ---------------------------------------------------------------------------------------",
+    ])
+    return lines
 
 
 def unit_ids_for_gauge(
@@ -239,17 +283,28 @@ def _get_dataset_id_and_varstr(nc_path: Path) -> tuple[str, str]:
     with xr.open_dataset(nc_path) as ds:
         title = ds.attrs.get("title", "") or ""
         dataset_id = ds.attrs.get("dataset_id", "").strip()
+        candidates = [v for v in ds.data_vars if TIME_NAME in ds[v].dims and not v.endswith("_bnds")]
+        if not candidates:
+            candidates = [v for v in ds.data_vars if not v.endswith("_bnds")]
+
         if not dataset_id:
-            if "casr" in title.lower():
-                dataset_id = "CaSR_v3_1"
+            version_pattern = r"^(CaSR_v\d+(?:_\d+)*)_"
+            variable_ids = {
+                match.group(1)
+                for name in candidates
+                if (match := re.match(version_pattern, name))
+            }
+            filename_match = re.match(version_pattern, Path(nc_path).stem)
+            if len(variable_ids) == 1:
+                dataset_id = next(iter(variable_ids))
+            elif not variable_ids and filename_match:
+                dataset_id = filename_match.group(1)
+            elif variable_ids or "casr" in title.lower():
+                dataset_id = "CaSR"
             else:
                 first_var = next(iter(ds.data_vars), "")
                 m = re.match(r"([A-Za-z0-9_.]+)_", first_var)
                 dataset_id = (m.group(1) if m else "unknownDataset")
-
-        candidates = [v for v in ds.data_vars if TIME_NAME in ds[v].dims and not v.endswith("_bnds")]
-        if not candidates:
-            candidates = [v for v in ds.data_vars if not v.endswith("_bnds")]
 
         if len(candidates) > 5:
             var_str = "allvars"
@@ -426,15 +481,7 @@ def _write_version_gridweights_for_aggregated(
     if common_header:
         header_lines = common_header.strip().splitlines()
     else:
-        header_lines = [
-            "# ---------------------------------------------------------------------------------------",
-            "#         File type: Grid Weights for Raven NETCDF v4.n",
-            "#        Model info: Ontario Hydrologic Modeling System (OHMS)",
-            "#    Forcing NETCDF: Canadian Surface Reanalysis (CaSR) v3.1",
-            "#        Created by: Hongren Shen",
-            _hdr_kv("Creation date", created_on),
-            "# ---------------------------------------------------------------------------------------",
-        ]
+        header_lines = _gridweights_header(agg_nc_path, created_on)
 
     header_lines += [_hdr_kv(f"Version {ver.idx}", ver.desc)]
     if name_key and str(name_key).strip():
@@ -444,7 +491,7 @@ def _write_version_gridweights_for_aggregated(
         _hdr_kv("Weights Shapefile", shp.name),
         _hdr_kv("key_col", key_col),
         _hdr_kv("NETCDF", agg_nc_path.name),
-        "#              Note: This grid weights file utilizes pre-aggregated forcing for each HRU",
+        "#              Note: This grid weights file uses pre-aggregated forcing for each HRU",
         "# ---------------------------------------------------------------------------------------",
         "",
         ":GridWeights",
@@ -490,21 +537,14 @@ def derive_gridweights_for_gridded_products(
     key_hru      = VERSIONS_BY_TARGET["hru"].key_col
 
     created_on = datetime.now().strftime("%Y-%m-%d")
+    default_header = [] if common_header else _gridweights_header(nc_path, created_on)
 
     def _prepend_header(path: Path, *, version_idx: int, version_desc: str, weights_shp_name: str, key_col: str) -> None:
         lines: List[str] = []
         if common_header:
             lines.extend(common_header.strip().splitlines())
         else:
-            lines.extend([
-                "# ---------------------------------------------------------------------------------------",
-                "#         File type: Grid Weights for Raven NETCDF v4.n",
-                "#        Model info: Ontario Hydrologic Modeling System (OHMS)",
-                "#    Forcing NETCDF: Canadian Surface Reanalysis (CaSR) v3.1",
-                "#        Created by: Hongren Shen",
-                _hdr_kv("Creation date", created_on),
-                "# ---------------------------------------------------------------------------------------",
-            ])
+            lines.extend(default_header)
         lines.append(_hdr_kv(f"Version {version_idx}", version_desc))
         if label and str(label).strip():
             lines.append(_hdr_kv("Name key", str(label).strip()))
@@ -512,7 +552,7 @@ def derive_gridweights_for_gridded_products(
             _hdr_kv("Weights Shapefile", weights_shp_name),
             _hdr_kv("key_col",           key_col),
             _hdr_kv("NETCDF",            nc_path.name),
-            "#              Note: This grid weights file utilizes gridded forcing for each HRU",
+            "#              Note: This grid weights file uses gridded forcing for each HRU",
             "# ---------------------------------------------------------------------------------------",
             "",
         ]
@@ -626,7 +666,7 @@ def aggregate_netcdf_forcing(
             return None
         nc_path = max(nc_candidates, key=lambda p: p.stat().st_mtime)
 
-    suffix_letter, _ = normalize_hru_version(hru_version)
+    suffix_letter, _ = normalize_hru_version(hru_version, olrrp_version=olrrp_version)
     tgt = (aggregate_target or "").strip().lower()
     if tgt not in {"basin", "subbasin", "hru"}:
         raise ValueError("aggregate_target must be one of 'basin','subbasin','hru'")
@@ -1164,98 +1204,84 @@ def crop_netcdf_time_range(
     time_name: str = "time",
     copy_chunk_hours: int = 24*365,
 ) -> Path:
-    def _to_ts(x):
-        if isinstance(x, (tuple, list)):
-            return pd.Timestamp(*x)
-        return pd.Timestamp(x)
+    """Copy an inclusive CF time range without changing stored data or packing."""
+    if Path(nc_in).resolve() == Path(nc_out).resolve():
+        raise ValueError("Time-crop input and output must be different files")
+    if copy_chunk_hours < 1:
+        raise ValueError("copy_chunk_hours must be positive")
 
-    t0 = _to_ts(t_start); t1 = _to_ts(t_end)
-    src = nc.Dataset(str(nc_in), "r")
-    try:
+    def _to_ts(value):
+        timestamp = pd.Timestamp(*value) if isinstance(value, (tuple, list)) else pd.Timestamp(value)
+        if pd.isna(timestamp):
+            raise ValueError("Time-crop bounds must be valid dates")
+        if timestamp.tzinfo is not None:
+            timestamp = timestamp.tz_convert("UTC").tz_localize(None)
+        return timestamp
+
+    t0, t1 = _to_ts(t_start), _to_ts(t_end)
+    if t0 > t1:
+        raise ValueError("Time-crop start must not be after its end")
+
+    with nc.Dataset(str(nc_in), "r") as src:
         if time_name not in src.variables:
             raise KeyError(f"'{time_name}' coordinate missing in {nc_in}")
-
         tvar = src.variables[time_name]
-        try:
-            t_datetimes = nc.num2date(tvar[:], units=tvar.units, calendar=getattr(tvar, "calendar", "standard"))
-        except Exception:
-            t_datetimes = pd.to_datetime(tvar[:])
-
-        t_series = pd.to_datetime(t_datetimes)
-        idx = t_series[(t_series >= t0) & (t_series <= t1)].index.to_numpy()
-        if len(idx) == 0:
+        if tvar.dimensions != (time_name,) or not getattr(tvar, "units", None):
+            raise ValueError(f"'{time_name}' must be a one-dimensional CF time coordinate with units")
+        times = tvar[:]
+        if np.ma.getmaskarray(times).any() or not np.isfinite(times).all():
+            raise ValueError("Time coordinate contains missing or non-finite values")
+        times = np.asarray(times)
+        if np.any(np.diff(times) <= 0):
+            raise ValueError("Time coordinate must be strictly increasing")
+        bounds = nc.date2num(
+            [t0.to_pydatetime(), t1.to_pydatetime()],
+            units=tvar.units,
+            calendar=getattr(tvar, "calendar", "standard"),
+        )
+        idx = np.flatnonzero((times >= bounds[0]) & (times <= bounds[1]))
+        if not len(idx):
             raise ValueError(f"No times in range {t0}..{t1}")
+        i0, i1 = int(idx[0]), int(idx[-1]) + 1
 
-        i0 = int(idx[0]); i1 = int(idx[-1]) + 1
-
-        dst = nc.Dataset(str(nc_out), "w", format="NETCDF4")
-        try:
-            for k, v in src.__dict__.items():
-                try: setattr(dst, k, v)
-                except Exception: setattr(dst, k, str(v))
-
+        # Copy raw values so scale_factor, add_offset, and fill codes remain exact.
+        src.set_auto_maskandscale(False)
+        with nc.Dataset(str(nc_out), "w", format="NETCDF4") as dst:
+            dst.setncatts(src.__dict__)
             for dname, dim in src.dimensions.items():
-                if dname == time_name:
-                    dst.createDimension(dname, i1 - i0)
-                else:
-                    dst.createDimension(dname, (len(dim) if not dim.isunlimited() else None))
+                length = i1 - i0 if dname == time_name else (None if dim.isunlimited() else len(dim))
+                dst.createDimension(dname, length)
 
-            def _mk_var(vname):
-                v = src.variables[vname]
+            for vname, variable in src.variables.items():
                 kwargs = {}
-                if compress and v.dtype.kind in ("f", "i", "u"):
-                    kwargs.update(dict(zlib=True, complevel=int(compression_level)))
-                if time_name in v.dimensions:
-                    try:
-                        chunks_t = min(copy_chunk_hours, max(i1 - i0, 1))
-                        if len(v.dimensions) == 1:
-                            kwargs["chunksizes"] = (chunks_t,)
-                        elif len(v.dimensions) == 2:
-                            other = v.shape[1]
-                            kwargs["chunksizes"] = (chunks_t, min(512, max(other, 1)))
-                        elif len(v.dimensions) == 3:
-                            ylen, xlen = v.shape[1], v.shape[2]
-                            kwargs["chunksizes"] = (chunks_t, min(ylen, 1024), min(xlen, 1024))
-                    except Exception:
-                        pass
-                var = dst.createVariable(vname, v.dtype, v.dimensions, **kwargs)
-                for ak, av in v.__dict__.items():
-                    if ak == "_FillValue":
-                        continue
-                    try: setattr(var, ak, av)
-                    except Exception: setattr(var, ak, str(av))
-                return var
-
-            for vname in src.variables:
-                _mk_var(vname)
-
-            dst.variables[time_name][:] = tvar[i0:i1]
-
-            for vname, v in src.variables.items():
-                if vname == time_name:
-                    continue
-                dims = v.dimensions
-                if time_name in dims:
-                    tpos = dims.index(time_name)
-                    slicers = [slice(None)] * len(dims)
-                    for t in range(i0, i1, copy_chunk_hours):
-                        t2 = min(i1, t + copy_chunk_hours)
-                        slicers[tpos] = slice(t, t2)
-                        block = v[tuple(slicers)]
-                        slicers_out = list(slicers)
-                        slicers_out[tpos] = slice(t - i0, t2 - i0)
-                        dst.variables[vname][tuple(slicers_out)] = block
+                if "_FillValue" in variable.ncattrs():
+                    kwargs["fill_value"] = variable.getncattr("_FillValue")
+                if compress and variable.ndim and getattr(variable.dtype, "kind", None) in ("f", "i", "u"):
+                    kwargs.update(zlib=True, complevel=int(compression_level))
+                if time_name in variable.dimensions:
+                    kwargs["chunksizes"] = tuple(
+                        min(copy_chunk_hours, i1 - i0) if dim == time_name else min(max(size, 1), 512)
+                        for dim, size in zip(variable.dimensions, variable.shape)
+                    )
+                output = dst.createVariable(vname, variable.dtype, variable.dimensions, **kwargs)
+                output.setncatts({key: value for key, value in variable.__dict__.items() if key != "_FillValue"})
+                output.set_auto_maskandscale(False)
+                if time_name in variable.dimensions:
+                    tpos = variable.dimensions.index(time_name)
+                    for start in range(i0, i1, copy_chunk_hours):
+                        end = min(i1, start + copy_chunk_hours)
+                        source_slice = [slice(None)] * variable.ndim
+                        source_slice[tpos] = slice(start, end)
+                        output_slice = list(source_slice)
+                        output_slice[tpos] = slice(start - i0, end - i0)
+                        output[tuple(output_slice)] = variable[tuple(source_slice)]
                 else:
-                    dst.variables[vname][:] = v[:]
+                    output[...] = variable[...]
 
             stamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M UTC")
-            hist  = getattr(dst, "history", "")
-            note  = f"{stamp}  time-cropped to {t0} - {t1} (inclusive)"
-            dst.history = (hist + "\n" + note) if hist else note
-        finally:
-            dst.close()
-    finally:
-        src.close()
+            history = getattr(dst, "history", "")
+            note = f"{stamp}  time-cropped to {t0} - {t1} (inclusive)"
+            dst.history = (history + "\n" + note) if history else note
 
     return Path(nc_out)
 

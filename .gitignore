@@ -179,3 +179,20 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# macOS metadata
+.DS_Store
+._*
+
+# Keep the four small bundled example inputs; ignore additional local forcing.
+/data/casr_3.1/*
+!/data/casr_3.1/SE/
+/data/casr_3.1/SE/*
+!/data/casr_3.1/SE/CaSR_v3_1_A_PR0_SFC.nc
+!/data/casr_3.1/SE/CaSR_v3_1_A_RAIN_SFC.nc
+!/data/casr_3.1/SE/CaSR_v3_1_A_SNOW_SFC.nc
+!/data/casr_3.1/SE/CaSR_v3_1_A_TT_1_5m.nc
+
+# Suggested output locations for local trial runs.
+/results_test/
+/results_daily/

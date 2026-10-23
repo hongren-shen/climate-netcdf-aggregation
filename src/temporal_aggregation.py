@@ -4,20 +4,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 """
-Temporal aggregation utilities for gridded or station-style NetCDF forcings.
+Aggregate gridded or spatially averaged NetCDF forcing over time.
 
-Key features
-------------
-- Handles gridded (time, y, x) and station (time, stations) layouts.
-- Optional timezone shift BEFORE aggregation (compatiable with "America/Toronto" or fixed "UTC-5").
-- Optional conversion from period-ending to period-starting timestamps (shift back by one native step).
-- Aggregation methods: sum, mean, min, max, first, last.
-- Robust chunked processing to keep memory bounded.
-- Preserves station_id/station_names when present.
-- Adds clear metadata about temporal processing.
-- Daily-like grouping ("D","1D","24H") uses the **first anchor present in data** and **labels on the left edge**,
-  allowing the first aggregated day to be partial (e.g., 1979-12-31 07:00-23:00 local), labeled at the first observed
-  midnight (e.g., 1979-12-31 00:00).
+The functions support (time, y, x) and (time, stations) layouts, with optional
+changes to the time zone and conversion of period-ending timestamps to period
+starts. Available methods are sum, mean, min, max, first, and last. Data are
+processed in chunks to limit memory use. The output keeps station_id and
+station_names when present and records the time processing in its attributes.
+
+Daily groups ("D", "1D", "24H") start at the configured local hour. Output
+timestamps mark the start of each period; the first and last periods may
+contain only part of a day.
 """
 
 from __future__ import annotations
@@ -137,8 +134,10 @@ def _group_index(dts_local: list, *, freq: str, anchor_hour: int,
         if (label or "").lower() == "right":
             floors = floors + pd.to_timedelta(1, "D")
     else:
+        # Preserve uppercase labels in metadata while using pandas-compatible hourly aliases.
+        f_pandas = re.sub(r"(?i)H$", "h", f)
         try:
-            floors = s.floor(f)
+            floors = s.floor(f_pandas)
         except Exception:
             shift = pd.to_timedelta(anchor_hour, unit="h")
             floors = (s - shift).floor("D") + shift
@@ -243,13 +242,13 @@ def aggregate_netcdf_temporal(
     verbose: bool = True,
 ) -> Path:
     """
-    Temporally aggregate a forcing NetCDF (gridded or spatially aggregated) to a coarser
-    resolution (e.g., hourly to daily, hourly to monthly), with optional timezone shifting
-    and handling of period-ending timestamps.
+    Aggregate a gridded or spatially averaged forcing NetCDF over time, such as
+    hourly to daily, with optional changes to the time zone and conversion of
+    period-ending timestamps to period starts.
 
-    Daily-like rules ("D","1D","24H") use:
-      - first anchor present in data (e.g., first observed 00:00 local)
-      - LEFT-edge labels (period_start semantics after period-ending correction)
+    Daily groups ("D", "1D", "24H") start at the configured local hour. Output
+    timestamps mark the start of each period; the first and last periods may
+    contain only part of a day.
     """
     src_nc_path = Path(src_nc_path)
     if not src_nc_path.exists():

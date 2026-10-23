@@ -1,0 +1,11 @@
+# Tested with Python 3.11.14. Prefer environment.yml for the GDAL runtime.
+# Installing GDAL with pip also requires compatible native GDAL libraries.
+GDAL==3.10.3
+geopandas==1.1.1
+netCDF4==1.7.3
+numpy==2.3.3
+pandas==2.3.3
+pyogrio==0.11.0
+tqdm==4.67.1
+xarray==2025.10.1
+# Optional sparse acceleration: scipy==1.16.2 (included in environment.yml).

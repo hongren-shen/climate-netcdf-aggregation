@@ -1,0 +1,17 @@
+name: climate-netcdf-aggregation
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11.14
+  - gdal=3.10.3
+  - geopandas=1.1.1
+  - netcdf4=1.7.3
+  - numpy=2.3.3
+  - pandas=2.3.3
+  - pyogrio=0.11.0
+  - pyproj=3.7.2
+  - shapely=2.1.2
+  - tqdm=4.67.1
+  - xarray=2025.10.1
+  - scipy=1.16.2

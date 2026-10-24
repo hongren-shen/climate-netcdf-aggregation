@@ -3,6 +3,8 @@ message: "If you use this software, please cite the archived version used in you
 type: software
 title: "Climate NetCDF aggregation tools"
 version: 1.0.0
+doi: 10.5281/zenodo.23607262
+date-released: "2026-10-24"
 authors:
   - family-names: Shen
     given-names: Hongren

@@ -50,8 +50,13 @@ shapefile names are:
 | --- | --- | --- |
 | `outline.shp` | `ID` | Basin aggregation and optional gridded crop. |
 | `finalcat_info_v2-0-1.shp` | `SubId` | Subbasin aggregation. |
-| `final_hru_v2-0-1a.shp` | `HRU_ID`, `SubId` | OWL-Hydro semi-distributed HRUs and their forcing mappings. |
-| `final_hru_v2-0-1b.shp` | `HRU_ID`, `SubId` | OWL-Hydro routing-only HRUs and their forcing mappings. |
+| `final_hru_v2-0-1a.shp` | `HRU_ID`, `SubId` | OWL-Hydro complex HRUs and their forcing mappings. |
+| `final_hru_v2-0-1b.shp` | `HRU_ID`, `SubId` | OWL-Hydro simple HRUs and their forcing mappings. |
+
+Complex HRUs (`v2-0-1a`) combine land cover, vegetation, and soil profile classes,
+with explicit lake HRUs. Simple HRUs (`v2-0-1b`) distinguish lake and non-lake
+areas. Both configurations share the same subbasin boundaries, retained lakes,
+and routing topology.
 
 Keep `.shx`, `.dbf`, `.prj`, and any supplied `.cpg` files alongside each `.shp`.
 Geometries must be valid and have a defined CRS. Identifiers must match the
@@ -109,7 +114,7 @@ to select which supplied files to process.
 
 ### Grid and time coordinates
 
-The grid-weight wrapper uses `rlon,rlat` as the spatial dimensions and `lon,lat`
+The grid weights wrapper uses `rlon,rlat` as the spatial dimensions and `lon,lat`
 as the geographic coordinate variables. In the CaSR example:
 
 - Meteorological variables use `(time, rlat, rlon)`.
@@ -127,7 +132,7 @@ time steps may differ, as in the hourly precipitation and three-hourly
 temperature example. Check grid consistency before running; the startup checks
 do not compare the grids across files.
 
-The core spatial routines can read other dimensions. The driver and grid-weight
+The core spatial routines can read other dimensions. The driver and grid weights
 wrapper use the CaSR layout above, so check and update coordinate handling
 when using another grid.
 
@@ -164,7 +169,7 @@ and check that all expected spatial units appear in the output.
 
 Before clearing regional outputs, the driver checks the gauge CSV and required
 columns, finds matching stations, and checks the forcing files, routing files,
-shapefile companions, and grid-weight helper. These startup checks do not
+shapefile companions, and grid weights helper. These startup checks do not
 validate all NetCDF values or routing geometries. If processing fails, the run
 returns a nonzero exit status and stops before creating ZIP files for the
 current region. Partial outputs are kept for inspection. ZIP failures also
@@ -176,8 +181,8 @@ return a nonzero exit status.
 | No gauges match | Check the table's `Region` and `Obs_NM` values against the selected region and gauge IDs. |
 | Prepared forcing NetCDF files not found | Restore the four bundled files for the example, or set `--input-root` to a directory containing the region folder and selected files. |
 | Required routing files not found | Set `--routing-root` to matching region/gauge folders and retain the required `.shp`, `.shx`, `.dbf`, and `.prj` files. |
-| Grid-weight helper not found | Restore the bundled script or set `--gridweights-generator` to an existing copy. |
-| `No module named osgeo` or grid-weight helper fails | Activate the environment containing GDAL and confirm that its `python` is used by the driver and helper. |
+| Grid weights helper not found | Restore the bundled script or set `--gridweights-generator` to an existing copy. |
+| `No module named osgeo` or grid weights helper fails | Activate the environment containing GDAL and confirm that its `python` is used by the driver and helper. |
 | No output for a target | Check the required shapefile, its companion files, IDs, geometry, grid coverage, and the processing messages. |
 
 See [configuration](configuration.md) for the full parameter list and the

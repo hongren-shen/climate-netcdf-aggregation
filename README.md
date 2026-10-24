@@ -27,7 +27,7 @@ conda activate climate-netcdf-aggregation
 python workflow/aggregate_driver.py --help
 ```
 
-GDAL and its `osgeo` Python bindings are required by the grid-weight helper.
+GDAL and its `osgeo` Python bindings are required by the grid weights helper.
 The environment file installs them with the scientific Python packages from
 conda-forge. The helper runs through `python`, so keep this environment activated
 when running the driver, including from an IDE. See the
@@ -151,10 +151,13 @@ Set `--workers N` to use up to `N` worker processes. The default is
 are processed in sequence. See [parallel processing](docs/configuration.md#parallel-processing)
 for the task order and an example.
 
-The HRU suffixes follow the **OWL-Hydro convention**: `v2-0-1a` is the
-semi-distributed layout and `v2-0-1b` is the routing-only layout. The base
-version must match `--olrrp-version`. The earlier names `semi-distributed` and
-`routing-only` are also accepted.
+The HRU suffixes follow the **OWL-Hydro convention**: `v2-0-1a` uses complex
+HRUs defined by combinations of land cover, vegetation, and soil profile classes,
+with explicit lake HRUs. `v2-0-1b` uses simple HRUs that distinguish lake and
+non-lake areas. Both configurations share the same subbasin boundaries, retained
+lakes, and routing topology. The base version must match `--olrrp-version`.
+The command-line aliases `semi-distributed` and `routing-only` remain accepted
+for `v2-0-1a` and `v2-0-1b`, respectively.
 
 The **24H gauge inventory does not set the forcing output frequency**. To
 create daily forcing, enable temporal aggregation explicitly:
@@ -232,12 +235,12 @@ Without ZIP packaging, generated files are written to
 
 - Aggregated NetCDFs with dimensions `time` and `stations`. The `station_id`
   variable contains basin, subbasin, or HRU IDs, not hydrometric gauge IDs.
-- Raven grid-weight files linking model HRUs to the aggregated series.
+- Raven grid weights files linking model HRUs to the aggregated series.
 - `netcdf_metadata_*.txt` files describing dimensions, variables, and attributes.
 - Gridded NetCDFs cropped to the gauge area, with their grid weights, when
   `--gridded` is enabled.
 
-When writing grid-weight headers, the code reads the software version from
+When writing the headers for grid weights, the code reads the software version from
 `CITATION.cff`. Update its `version` field for a new release. If the citation file
 is missing or its version cannot be read, the header shows only the repository
 name and link. Existing output files retain their original headers.
@@ -254,12 +257,12 @@ is packaged as `<output-root>/<REGION>/<GAUGE>.zip` and then removed.
 The reference file `results/SE/02KA015.zip` was generated from the included
 2020 inputs using the default settings: subbasin aggregation, original time
 steps, and one worker process. It contains ten files: four aggregated NetCDFs,
-four text files describing their contents, and two Raven grid-weight files
+four text files describing their contents, and two Raven grid weights files
 for the `v2-0-1a` and `v2-0-1b` HRU layouts. The aggregated series keep the
 source UTC timestamps. The original gridded inputs are in `data/casr_3.1/SE/`.
 
 The driver checks the gauge table, matching gauge selection, forcing files,
-required routing files and shapefile companions, and grid-weight helper before
+required routing files and shapefile companions, and grid weights helper before
 changing outputs. After these checks pass, **each selected regional output
 directory is cleared**, including with `--no-overwrite`. Use a separate folder
 for outputs and save any previous results you need. If processing or ZIP
@@ -267,7 +270,15 @@ creation fails, the run stops and returns a nonzero exit status to indicate
 an error. If processing fails, the current region is not packaged into ZIP
 files. Partial results are kept so you can inspect them.
 
-### Grid-weight versions
+### Using the outputs in Raven
+
+Using these outputs in Raven also requires the appropriate model input files and
+`.rvt` configuration. For NetCDF forcing settings and grid weights, see the
+[Raven User's and Developer's Manual](https://raven.uwaterloo.ca/files/v4.1/RavenUsersManual_v4.1.pdf)
+(Section 2.2 and Appendix A.4.7). Executables with NetCDF support and example
+models are available from the [official Raven downloads page](https://raven.uwaterloo.ca/Downloads.html).
+
+### Grid weights versions
 
 The `version1`, `version2`, and `version3` prefixes in weight filenames show
 which area is averaged to assign forcing to model HRUs:
@@ -289,7 +300,7 @@ referencing grid cells. Use each weight file with the NetCDF named in its header
 
 These weight version numbers are separate from the software and routing
 versions. For example, `version2_gridweights_agg_subbasin_v2-0-1a.txt` uses
-subbasin averaging (Version 2), routing release `v2-0-1`, and the semi-distributed
+subbasin averaging (Version 2), routing release `v2-0-1`, and the complex
 HRU layout `a`. The `Created by` header separately records the software version,
 such as `v1.0.0`.
 
@@ -328,7 +339,7 @@ repository citation is:
 Shen, H. (2026). *Climate NetCDF aggregation tools* (Version 1.0.0)
 [Computer software]. [GitHub](https://github.com/hongren-shen/climate-netcdf-aggregation).
 
-### Grid-weight generator
+### Grid weights generator
 
 The workflow uses a modified copy of Juliane Mai's
 [Grid Weights Generator for Raven](https://github.com/julemai/GridWeightsGenerator).
@@ -370,7 +381,7 @@ describes the dataset. This repository's example uses CaSR v3.1.
 ## License and acknowledgements
 
 Code is provided under the [GNU Lesser General Public License, version 3 or
-later](LICENSE). The modified grid-weight generator retains Juliane Mai's
+later](LICENSE). The modified grid weights generator retains Juliane Mai's
 copyright and license notices. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
 The included OWL-Hydro gauge inventory is provided under CC BY 4.0, separately

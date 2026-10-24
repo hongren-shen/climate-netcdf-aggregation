@@ -1,6 +1,6 @@
 # Third-party notices
 
-## Grid-weight generator
+## Grid weights generator
 
 `src/derive_grid_weights_modified_202312.py` is a modified copy of Juliane
 Mai's [Grid Weights Generator for Raven](https://github.com/julemai/GridWeightsGenerator).
@@ -25,7 +25,7 @@ In this table, `HRU_ID` stores the basin, subbasin, or HRU identifier selected
 for aggregation.
 
 `spatial_aggregation.py` reads this table and uses the weights to aggregate
-the NetCDF time series. Juliane Mai developed the original grid-weight
+the NetCDF time series. Juliane Mai developed the original grid weights
 algorithm. Our changes add the output needed by this workflow. Keep the
 copyright and license notices when redistributing the script.
 

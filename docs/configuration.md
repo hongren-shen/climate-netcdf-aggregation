@@ -24,7 +24,7 @@ and preparation details.
 
 Before clearing outputs, the driver checks the gauge CSV's required columns and
 selected gauges. It also checks the forcing paths, required routing files and
-shapefile companions, and the grid-weight helper. It does not check NetCDF
+shapefile companions, and the grid weights helper. It does not check NetCDF
 contents or routing geometry at startup. If processing fails, the run stops with
 a nonzero exit status before packaging that region's outputs and leaves the files
 for inspection. ZIP failures also return a nonzero exit status. See
@@ -69,17 +69,20 @@ gauge, including both HRU layouts where needed for output weights.
 | `--gridded` | `want_gridded_forcing` | `False` | Also export cropped gridded forcing and its grid weights. |
 
 The `basin`, `subbasin`, and `hru` targets correspond to weight Versions 1, 2,
-and 3. See [grid-weight versions](../README.md#grid-weight-versions) for how each
+and 3. See [grid weights versions](../README.md#grid-weights-versions) for how each
 version assigns forcing to HRUs and how gridded and aggregated weights differ.
 
-OWL-Hydro uses `v2-0-1a` for the semi-distributed layout and `v2-0-1b` for the
-routing-only layout. Their input files are `final_hru_v2-0-1a.shp` and
-`final_hru_v2-0-1b.shp`.
+OWL-Hydro uses `v2-0-1a` for complex HRUs defined by combinations of land cover,
+vegetation, and soil profile classes, with explicit lake HRUs. `v2-0-1b` uses
+simple HRUs that distinguish lake and non-lake areas. Both configurations share
+the same subbasin boundaries, retained lakes, and routing topology. Their input
+files are `final_hru_v2-0-1a.shp` and `final_hru_v2-0-1b.shp`.
 
-The base version in each full HRU code must match `olrrp_version`. The earlier
-names `semi-distributed` and `routing-only` are also accepted. Changing a version
-selects filenames; it does not convert the routing data. Basin and subbasin outputs include weight
-mappings for both HRU layouts, regardless of `--hru-versions`.
+The base version in each full HRU code must match `olrrp_version`. The command-line
+aliases `semi-distributed` and `routing-only` remain accepted for `v2-0-1a` and
+`v2-0-1b`, respectively. Changing a version selects filenames; it does not convert
+the routing data. Basin and subbasin outputs include weight mappings for both HRU
+layouts, regardless of `--hru-versions`.
 
 ## Temporal aggregation
 
@@ -198,7 +201,7 @@ used internally by numerical libraries.
 | `--hru-prefix PREFIX` | `hru_name_prefix` | `final_hru_` | Prefix before the full HRU version in HRU shapefile names. |
 | `--outline-name FILE` | `outline_shp_name` | `outline.shp` | Gauge outline filename. |
 | `--gridweights-prefix PREFIX` | `grid_weights_file_prefix` | `gridweights_` | Prefix for gridded-product weight files. |
-| `--gridweights-generator SCRIPT` | `grid_weights_generator` | `src/derive_grid_weights_modified_202312.py` | Grid-weight helper script. |
+| `--gridweights-generator SCRIPT` | `grid_weights_generator` | `src/derive_grid_weights_modified_202312.py` | Grid weights helper script. |
 | `--crop-buffer-cells N` | `crop_buffer_cell` | `5` | Nonnegative cell padding for the optional gauge crop when `--gridded` is enabled. |
 
 Keep the supplied subbasin prefix and outline name. The writer for aggregated

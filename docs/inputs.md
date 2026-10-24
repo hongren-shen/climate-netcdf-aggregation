@@ -79,8 +79,8 @@ The driver expects `<input-root>/<REGION>/<FILENAME>`. The default root is
 
 The four files were extracted from the prepared SE regional files in `SE.zip`.
 They cover the full 2020 calendar year in UTC, with hourly precipitation,
-rainfall, and snowfall, and three-hourly temperature. The source timestamps
-still mark the end of each interval. The intervals span 1 January 2020 00:00 UTC
+rainfall, and snowfall, and three-hourly temperature. All four files use
+period-ending timestamps, which mark the end of each interval. The intervals span 1 January 2020 00:00 UTC
 through 1 January 2021 00:00 UTC. The precipitation files contain 8,784 records,
 labelled from 1 January 2020 01:00 UTC to 1 January 2021 00:00 UTC. Temperature
 contains 2,928 records, labelled from 1 January 2020 03:00 UTC to the same final
@@ -121,6 +121,12 @@ as the geographic coordinate variables. In the CaSR example:
   The configured temporal workflow expects source UTC times.
 - Each file covers the complete spatial extent needed by the selected gauges.
 
+All variable files processed together must use matching spatial coordinates and
+the same cell order, because the driver reuses weights between variables. Their
+time steps may differ, as in the hourly precipitation and three-hourly
+temperature example. Check grid consistency before running; the startup checks
+do not compare the grids across files.
+
 The core spatial routines can read other dimensions. The driver and grid-weight
 wrapper use the CaSR layout above, so check and update coordinate handling
 when using another grid.
@@ -132,10 +138,16 @@ aggregation, precipitation-related filename patterns select a sum; temperature
 and other variables use a mean. Check which calculation the filename selects
 before processing another variable, especially a rate or accumulated field.
 
-The default period-ending correction applies only when temporal aggregation
-is enabled. Set `--no-period-ending` for source timestamps that already mark
-the start of each interval. The default `UTC-5` is a fixed offset without
-daylight saving time. Daily output timestamps mark the start of each day.
+With `--temporal`, the default `--period-ending` option converts input labels
+to period starts by subtracting one source time step before grouping. Set
+`--no-period-ending` when the source is already period-starting. Without
+`--temporal`, the driver preserves the source labels. See
+[timestamp examples](../README.md#period-ending-and-period-starting-timestamps)
+for the definitions and examples.
+
+The default output time zone for temporal processing, `UTC-5`, is a fixed
+offset without daylight saving time. Daily output timestamps mark the start
+of each day in that time zone.
 
 Use regular time series with appropriate missing-value encoding. Spatial
 aggregation does not renormalize weights when cells have missing values.

@@ -56,6 +56,8 @@ from spatial_aggregation import (
 
 ##############################################################################
 debug_mode                          = False
+# Maximum gauge workers for the current input file; regions and files run in sequence.
+# Each task processes one gauge and one file. Use 1 to process gauges one at a time.
 num_cores                           = 1
 
 # Processing scope: inputs and outputs are organized by region.
@@ -110,7 +112,8 @@ label_avg_when_enabled_only         = True     # Add AVG to daily temperature na
 
 # Time conventions: applied only when temporal aggregation is enabled.
 temporal_tz_name                    = "UTC-5"  # Fixed UTC offset; no daylight saving time.
-period_ending2starting              = True     # Shift period-ending timestamps back by one native time step.
+# Bundled CaSR inputs are period-ending; disable this shift for period-starting inputs.
+period_ending2starting              = True     # With temporal aggregation, shift back by one source time step.
 
 # IO / performance
 aggregate_compress                  = True
@@ -205,7 +208,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     temporal.add_argument("--anchor-hour", dest="temporal_anchor_hour", type=int, metavar="HOUR",
                           help="Local boundary hour for daily aggregation, from 0 to 23.")
     temporal.add_argument("--period-ending", dest="period_ending2starting", action=argparse.BooleanOptionalAction,
-                          help="With temporal aggregation, shift period-ending timestamps back by one native time step.")
+                          help="With --temporal, treat input labels as period ends and shift them back by one source time step. Disable for period-starting inputs.")
     temporal.add_argument("--daily-temp-minmax", dest="derive_daily_temp_minmax", action=argparse.BooleanOptionalAction,
                           help="Add temperature MIN and MAX from input time steps when temporal aggregation and a daily frequency are enabled.")
     temporal.add_argument("--label-avg-when-enabled-only", dest="label_avg_when_enabled_only", action=argparse.BooleanOptionalAction,
@@ -215,7 +218,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     outputs.add_argument("--output-root", dest="output_folder", nargs=1, metavar="PATH",
                          help="Dedicated output root. Existing PATH/REGION directories are cleared before processing.")
     outputs.add_argument("--workers", dest="num_cores", type=int, metavar="N",
-                         help="Number of parallel gauge workers; use 1 for serial gauge processing.")
+                         help="Maximum gauge worker processes for the current input file. Regions and files run in sequence; use 1 to process gauges one at a time.")
     outputs.add_argument("--debug", dest="debug_mode", action=argparse.BooleanOptionalAction,
                          help="Process only the first two selected gauges in each region; worker count is unchanged.")
     outputs.add_argument("--compress", dest="aggregate_compress", action=argparse.BooleanOptionalAction,
@@ -410,7 +413,7 @@ def _process_one_gauge(
     precomputed: Dict[str, List[Path]],
 ) -> str:
     """
-    Per-gauge job for one variable file. For parallel processing use.
+    Process one gauge for one input file, including its selected spatial and temporal outputs.
     """
     gauge_dir = out_root / gid
     gauge_dir.mkdir(parents=True, exist_ok=True)
@@ -699,7 +702,7 @@ if __name__ == "__main__":
 
     print("\n====================== Running with configuration ======================")
     print(f"                     Debug mode:  {debug_mode}")
-    print(f"                Number of cores:  {num_cores}")
+    print(f"         Gauge worker processes:  {num_cores}")
     print(f"           Want gridded forcing:  {want_gridded_forcing}")
     print(f"  Want aggregated targets (set):  {want_aggregated_targets}")
     if "hru" in want_aggregated_targets:
@@ -732,6 +735,8 @@ if __name__ == "__main__":
         shutil.rmtree(output_gauge_forcing_folder, ignore_errors=True)
         output_gauge_forcing_folder.mkdir(parents=True, exist_ok=True)
 
+        # Variables on the same grid reuse each gauge's weights and grid-info files.
+        # Process files in sequence so shared weights are complete before reuse.
         for netcdf_file_i in nc_files_process:
             print(f">>> Source NETCDF (regional gridded): {netcdf_file_i}")
             start_time_var = time.time()

@@ -77,8 +77,8 @@ routing-only layout. Their input files are `final_hru_v2-0-1a.shp` and
 `final_hru_v2-0-1b.shp`.
 
 The base version in each full HRU code must match `olrrp_version`. The earlier
-names `semi-distributed` and `routing-only` are also accepted. Changing a version selects filenames; it
-does not convert the routing data. Basin and subbasin outputs include weight
+names `semi-distributed` and `routing-only` are also accepted. Changing a version
+selects filenames; it does not convert the routing data. Basin and subbasin outputs include weight
 mappings for both HRU layouts, regardless of `--hru-versions`.
 
 ## Temporal aggregation
@@ -89,14 +89,15 @@ mappings for both HRU layouts, regardless of `--hru-versions`.
 | `--frequency FREQ` | `temporal_agg_freq` | `D` | One output frequency per run: daily (`D`) or a positive whole-hour interval, such as `3H`, `6H`, or `12H`. |
 | `--timezone ZONE` | `temporal_tz_name` | `UTC-5` | Clock used for time grouping: UTC, a fixed offset, or a named time zone such as `America/Toronto`. |
 | `--anchor-hour HOUR` | `temporal_anchor_hour` | `0` | Local daily boundary hour, from 0 to 23; 0 means midnight. |
-| `--period-ending` | `period_ending2starting` | `True` | Shift period-ending timestamps back by one native time step before grouping. |
+| `--period-ending` | `period_ending2starting` | `True` | With temporal aggregation enabled, treat input labels as interval ends and shift them back by one source time step before grouping. Use `--no-period-ending` for period-starting inputs. |
 | `--daily-temp-minmax` | `derive_daily_temp_minmax` | `False` | Add daily temperature MIN and MAX from input time steps. |
 | `--label-avg-when-enabled-only` | `label_avg_when_enabled_only` | `True` | Add AVG to daily mean temperature filenames only when MIN/MAX are enabled. Turning this off always adds AVG for daily temperature. |
 
 With temporal aggregation disabled, the driver keeps source timestamps and native
 time steps. It applies the timezone, period-ending correction, and daily
 temperature options only when temporal aggregation is enabled. UTC-5 is a fixed
-offset without daylight saving time; a named time zone can include seasonal clock changes.
+offset without daylight saving time; a named time zone can include seasonal
+clock changes.
 
 Daily aggregation sums the configured precipitation amounts and averages
 temperature. With `--daily-temp-minmax`, it also calculates daily MIN and MAX
@@ -107,14 +108,32 @@ are case insensitive.
 Selecting `1H` does not interpolate native 3-hourly data into a complete hourly
 series. The driver still applies the configured timezone and period-ending
 correction when temporal aggregation is enabled. The command-line options do not
-accept monthly frequencies. Use separate runs and output folders for different frequencies.
+accept monthly frequencies. Use separate runs and output folders for different
+frequencies.
+
+### Input timestamp convention
+
+The included CaSR files use period-ending timestamps. With `--temporal` enabled,
+`--period-ending` (the default) shifts each input timestamp back by one source
+time step before grouping: one hour for the precipitation files and three
+hours for temperature. Requesting daily outputs does not change this shift
+to 24 hours.
+
+Use `--no-period-ending` for inputs already labelled at the start of each
+interval, so they are not shifted again. This option controls how the input
+labels are interpreted; temporal output labels always mark the start of each
+output period. Without `--temporal`, the original source labels are preserved,
+regardless of the `--period-ending` setting. Select the flag according to the
+source data; the driver does not detect the timestamp convention automatically.
+See [timestamp examples](../README.md#period-ending-and-period-starting-timestamps)
+for the two conventions.
 
 ## Outputs and execution
 
 | Option | Top-level setting | Default | Meaning |
 | --- | --- | --- | --- |
 | `--output-root PATH` | `output_folder` | `results` | Folder for outputs; each processed regional folder is cleared first. |
-| `--workers N` | `num_cores` | `1` | Number of gauge workers; use 1 to process gauges one at a time. Must be positive. |
+| `--workers N` | `num_cores` | `1` | Maximum gauge worker processes for the current input file. Must be positive; 1 processes gauges one at a time. |
 | `--debug` | `debug_mode` | `False` | Process the first two selected gauges per region; does not reduce the worker count. |
 | `--compress` | `aggregate_compress` | `True` | Compress aggregated NetCDF files. |
 | `--compression-level LEVEL` | `aggregate_compress_level` | `1` | NetCDF compression level, from 0 to 9. |
@@ -132,6 +151,44 @@ After startup checks pass, the driver deletes and recreates
 `<output-root>/<region>` for each processed region, even with `--no-overwrite`.
 Save any outputs you need before rerunning, and keep the output folder separate
 from all inputs. Write test runs to a separate folder, such as `results_test/native`.
+
+### Parallel processing
+
+`--workers N` sets the maximum number of gauge worker processes. The driver
+processes regions one at a time and, within each region, reads one input
+NetCDF file at a time. For the current file, it submits one task per selected
+gauge. Up to `N` gauge tasks run at once; a free worker takes the next queued
+task until all selected gauges are finished.
+
+Each task processes one gauge for one input file. It performs the requested
+spatial aggregation, HRU layouts, and optional temporal aggregation in sequence.
+All gauge tasks for that file must finish before the next file starts.
+
+Variables on the same spatial grid share overlap weights and grid info tables
+for each gauge and spatial target. The first input file creates missing weight
+and grid info files; later files reuse them. Final Raven weight files are also
+written once per target and HRU layout. This requires matching grid coordinates
+and cell order across input files. Processing variables in sequence prevents
+them from writing the same files or reading files that are still being written.
+The current workflow has no file locking for this step. Different gauges write
+to separate folders, so their tasks can run in parallel.
+
+For example, with 20 gauges and `--workers 4`, up to four gauges are processed
+at once for total precipitation. After all 20 finish, the driver moves to the
+next variable, such as rainfall. With only the single bundled gauge selected,
+extra workers do not make its four input files run concurrently. The default
+`--workers 1` processes gauge tasks one at a time.
+
+After all input files for a region are processed, ZIP creation also uses up to
+`N` worker processes, with one gauge folder per task.
+
+Regional gridded inputs follow the same task order. `--regions`
+selects input folders; it does not run those regions in parallel. The current
+driver writes gauge-level outputs and has no separate mode for generating one
+aggregated NetCDF covering every subbasin or HRU in an entire region.
+
+This setting controls gauge tasks and ZIP jobs. It does not configure threads
+used internally by numerical libraries.
 
 ## Advanced shapefile and grid settings
 
@@ -153,7 +210,8 @@ Those two options do not change the filenames in every part of the workflow.
 `prefer_precomputed_regional = False` remains at the top of the driver, with no
 command-line option. It looks for existing regional aggregations. The driver
 clears regional outputs before looking for those files, so enabling this setting
-alone does not preserve or reuse outputs from a previous run.
+alone does not preserve or reuse outputs from a previous run. Leave this setting
+as `False` when using the current driver.
 
 ## Examples from the repository root
 

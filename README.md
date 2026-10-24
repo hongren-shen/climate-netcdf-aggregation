@@ -144,6 +144,13 @@ saved in the script. Use `--help` to see the available options, or read the
 | Parallel workers | 1; increase for a larger gauge selection when resources permit |
 | Output packaging | One ZIP per gauge; remove the uncompressed gauge folder after zipping |
 
+**The driver supports parallel processing across gauges using multiple CPU cores,**
+**which is particularly useful for large regional datasets with many gauges.**
+Set `--workers N` to use up to `N` worker processes. The default is
+`--workers 1`, which processes gauges one at a time. Regions and variables
+are processed in sequence. See [parallel processing](docs/configuration.md#parallel-processing)
+for the task order and an example.
+
 The HRU suffixes follow the **OWL-Hydro convention**: `v2-0-1a` is the
 semi-distributed layout and `v2-0-1b` is the routing-only layout. The base
 version must match `--olrrp-version`. The earlier names `semi-distributed` and
@@ -185,9 +192,38 @@ of data. Check these partial days before using the results in a model.
   three-hourly source.
 
 Use inputs on matching grids that cover all selected basins, subbasins, or HRUs
-and have regular timestamps. The code does not fill data gaps, require a minimum number
-of records per output period, or supply weights for polygons with no grid
+and have regular timestamps. The code does not fill data gaps, require a minimum
+number of records per output period, or supply weights for polygons with no grid
 coverage. See [the input guide](docs/inputs.md) before using another dataset.
+
+### Period-ending and period-starting timestamps
+
+The included CaSR forcing files use **period-ending** time labels: the timestamp
+marks the end of the interval. For example, hourly precipitation labelled
+01:00 UTC represents the interval from 00:00 to 01:00 UTC. A **period-starting**
+label for that same interval is 00:00 UTC.
+
+The workflow can convert period-ending input labels to period-starting labels
+before temporal grouping. It subtracts one source time step, inferred separately
+from each file's timestamps. The shift uses the input time step, not the
+requested output frequency. These examples use UTC:
+
+| Input | Source time step | Period-ending label | Converted period-starting label |
+| --- | --- | --- | --- |
+| Total precipitation, rainfall, or snowfall | 1 hour | 01:00 | 00:00 |
+| Temperature | 3 hours | 03:00 | 00:00 |
+
+This correction is applied only with `--temporal`. The `--period-ending` option
+is enabled by default; use `--no-period-ending` when the input already uses
+period-starting labels. The driver does not automatically detect which
+convention the input uses. See [timestamp settings](docs/configuration.md#input-timestamp-convention)
+for the options.
+
+With temporal aggregation disabled, the driver keeps the original source time
+labels, including the period-ending labels in this example. Temporal outputs
+are labelled at the start of each output period in the selected time zone.
+The correction changes input labels before grouping; the aggregation then
+calculates sums, means, or extrema from those records.
 
 ## Outputs
 
